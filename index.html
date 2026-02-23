@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Tide Shepherd</title>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/esm/index.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;500&display=swap');
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      overflow: hidden;
+      background: #0a0a1a;
+      font-family: 'Cormorant Garamond', serif;
+      touch-action: none;
+    }
+    
+    #gameCanvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+    }
+    
+    #startScreen {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(10,15,35,0.88) 0%, rgba(5,10,25,0.7) 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: opacity 0.8s ease-out;
+    }
+    
+    #startScreen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    h1 {
+      color: #c0d8e8;
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
+      font-weight: 300;
+      letter-spacing: 0.15em;
+      text-shadow: 0 0 40px rgba(150,200,255,0.5), 0 0 80px rgba(100,180,255,0.3);
+      animation: titleReveal 1.5s ease-out forwards;
+    }
+    
+    @keyframes titleReveal {
+      from { opacity: 0; letter-spacing: 0.4em; transform: translateY(-15px); }
+      to { opacity: 1; letter-spacing: 0.15em; transform: translateY(0); }
+    }
+    
+    .tagline {
+      color: rgba(180,220,240,0.7);
+      font-size: clamp(1rem, 3vw, 1.4rem);
+      font-weight: 300;
+      margin-top: 1rem;
+      letter-spacing: 0.2em;
+      animation: fadeIn 1s ease-out 0.8s forwards;
+      opacity: 0;
+    }
+    
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+    
+    .instructions {
+      color: rgba(120,180,200,0.6);
+      font-size: clamp(0.85rem, 2.5vw, 1.1rem);
+      margin-top: 2.5rem;
+      letter-spacing: 0.15em;
+      animation: fadeIn 1s ease-out 1.2s forwards;
+      opacity: 0;
+    }
+    
+    .start-hint {
+      color: rgba(200,230,255,0.5);
+      font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+      margin-top: 1rem;
+      letter-spacing: 0.1em;
+      animation: pulse 2s ease-in-out infinite, fadeIn 1s ease-out 1.5s forwards;
+      opacity: 0;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 0.8; }
+    }
+    
+    #ui {
+      position: fixed;
+      top: 20px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.5s ease-out;
+    }
+    
+    #ui.visible {
+      opacity: 1;
+    }
+    
+    .pool-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: rgba(180,230,255,0.8);
+      font-size: 1rem;
+      letter-spacing: 0.1em;
+    }
+    
+    .pool-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(80,200,255,0.2);
+      border: 1px solid rgba(100,220,255,0.4);
+      transition: all 0.5s ease-out;
+    }
+    
+    .pool-dot.filled {
+      background: rgba(100,255,220,0.9);
+      box-shadow: 0 0 15px rgba(100,255,220,0.8);
+    }
+    
+    #instruction {
+      position: fixed;
+      bottom: 30px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: rgba(180,220,255,0.5);
+      font-size: 0.95rem;
+      letter-spacing: 0.15em;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.5s ease-out;
+    }
+    
+    #instruction.visible {
+      opacity: 1;
+    }
+    
+    #gameOver {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(10,15,35,0.92) 0%, rgba(5,10,25,0.85) 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.8s ease-out;
+    }
+    
+    #gameOver.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    
+    #gameOver h2 {
+      color: #c0d8e8;
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      font-weight: 300;
+      letter-spacing: 0.2em;
+    }
+    
+    #gameOver.win h2 {
+      text-shadow: 0 0 40px rgba(150,255,200,0.6);
+    }
+    
+    #gameOver.lose h2 {
+      text-shadow: 0 0 40px rgba(255,150,150,0.6);
+    }
+    
+    .restart-hint {
+      color: rgba(180,220,240,0.6);
+      font-size: 1rem;
+      margin-top: 2rem;
+      letter-spacing: 0.15em;
+      animation: pulse 2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  
+  <div id="startScreen">
+    <h1>TIDE SHEPHERD</h1>
+    <p class="tagline">Guide the moon's pull to fill the sacred pools</p>
+    <p class="instructions">Drag slowly across the sky</p>
+    <p class="start-hint">Touch to begin</p>
+  </div>
+  
+  <div id="ui">
+    <div class="pool-indicator">
+      <div class="pool-dot" id="pool0"></div>
+      <span>Ⅰ</span>
+    </div>
+    <div class="pool-indicator">
+      <div class="pool-dot" id="pool1"></div>
+      <span>Ⅱ</span>
+    </div>
+    <div class="pool-indicator">
+      <div class="pool-dot" id="pool2"></div>
+      <span>Ⅲ</span>
+    </div>
+  </div>
+  
+  <div id="instruction">drag the moon to guide the tide</div>
+  
+  <div id="gameOver">
+    <h2 id="gameOverText">AWAKENED</h2>
+    <p class="restart-hint">touch to rise again</p>
+  </div>
+
+  <a href="https://github.com/nishivector/tide-shepherd" target="_blank" style="
+    position: fixed; bottom: 16px; right: 16px;
+    color: rgba(255,255,255,0.4); font-size: 12px;
+    text-decoration: none; font-family: monospace;
+    z-index: 1000;
+  ">GitHub ↗</a>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // Game state
+    let scene, camera, renderer, clock;
+    let moon, waterParticles = [], pools = [], poolLevels = [0, 0, 0];
+    let gameStarted = false;
+    let gameOver = false;
+    let isDragging = false;
+    let moonVelocity = new THREE.Vector3();
+    let moonTarget = new THREE.Vector3(0, 15, 0);
+    let tideLevel = 0;
+    let lastMoonSpeed = 0;
+    
+    const startScreen = document.getElementById('startScreen');
+    const ui = document.getElementById('ui');
+    const instruction = document.getElementById('instruction');
+    const gameOverScreen = document.getElementById('gameOver');
+    const gameOverText = document.getElementById('gameOverText');
+
+    // Colors
+    const COLORS = {
+      navy: 0x0a1020,
+      moon: 0xe8f0ff,
+      moonGlow: 0xa0c8ff,
+      water: 0x40d0ff,
+      waterGlow: 0x80ffff,
+      pool: 0x2080a0,
+      poolFilled: 0x60ffd0,
+      flora: 0x40ffa0,
+      stone: 0x1a1a2a
+    };
+
+    function init() {
+      // Scene
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x050510, 0.015);
+      
+      // Camera
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+      applyCameraForAspect();
+      
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x050510);
+      
+      clock = new THREE.Clock();
+      
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x203050, 0.4);
+      scene.add(ambientLight);
+      
+      const moonLight = new THREE.PointLight(0xa0c8ff, 2, 50);
+      moonLight.position.set(0, 15, 0);
+      scene.add(moonLight);
+      
+      // Create scene elements
+      createSeaFloor();
+      createMoon();
+      createPools();
+      createWaterParticles();
+      createFlora();
+      createStartScreenScene();
+      
+      // Events
+      window.addEventListener('resize', onResize);
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('pointerup', onPointerUp);
+      renderer.domElement.addEventListener('pointercancel', onPointerUp);
+      
+      startScreen.addEventListener('pointerdown', onStart, { once: true });
+      gameOverScreen.addEventListener('pointerdown', onRestart, { once: true });
+      
+      animate();
+    }
+
+    function applyCameraForAspect() {
+      const aspect = window.innerWidth / window.innerHeight;
+      if (aspect < 1) {
+        camera.position.set(0, 35, 25);
+        camera.fov = 75;
+      } else {
+        camera.position.set(0, 28, 35);
+        camera.fov = 55;
+      }
+      camera.lookAt(0, 0, 0);
+      camera.updateProjectionMatrix();
+    }
+
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      applyCameraForAspect();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function createSeaFloor() {
+      // Sea floor plane
+      const floorGeo = new THREE.PlaneGeometry(80, 60, 40, 30);
+      const floorMat = new THREE.MeshStandardMaterial({
+        color: 0x0a1520,
+        roughness: 0.9,
+        metalness: 0.1
+      });
+      
+      // Add some vertex displacement for terrain
+      const pos = floorGeo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        // Create channels (lower areas)
+        let z = 0;
+        // Channel 1
+        if (Math.abs(x + 8 + y * 0.3) < 2.5 && y > -10) z = -1.5;
+        // Channel 2  
+        if (Math.abs(x - y * 0.2) < 2 && y > -5 && y < 15) z = -1.2;
+        // Channel 3
+        if (Math.abs(x - 10 + y * 0.4) < 2.5 && y > -15) z = -1.8;
+        pos.setZ(i, z + Math.sin(x * 0.5) * 0.3 + Math.cos(y * 0.5) * 0.2);
+      }
+      floorGeo.computeVertexNormals();
+      
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -2;
+      scene.add(floor);
+      
+      // Stone borders around play area
+      const stoneGeo = new THREE.TorusGeometry(30, 1.5, 8, 32);
+      const stoneMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2a, roughness: 0.95 });
+      const stone = new THREE.Mesh(stoneGeo, stoneMat);
+      stone.rotation.x = Math.PI / 2;
+      stone.position.y = -1.5;
+      scene.add(stone);
+    }
+
+    function createMoon() {
+      // Moon sphere
+      const moonGeo = new THREE.SphereGeometry(1.8, 32, 32);
+      const moonMat = new THREE.MeshStandardMaterial({
+        color: COLORS.moon,
+        emissive: COLORS.moonGlow,
+        emissiveIntensity: 0.6,
+        roughness: 0.3
+      });
+      moon = new THREE.Mesh(moonGeo, moonMat);
+      moon.position.set(0, 15, 0);
+      scene.add(moon);
+      
+      // Moon glow
+      const glowGeo = new THREE.SphereGeometry(2.5, 32, 32);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: COLORS.moonGlow,
+        transparent: true,
+        opacity: 0.15
+      });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      moon.add(glow);
+    }
+
+    function createPools() {
+      // Three sacred pools positioned along the channels
+      const poolPositions = [
+        { x: -12, z: -8 },
+        { x: 5, z: 8 },
+        { x: 14, z: -5 }
+      ];
+      
+      poolPositions.forEach((pos, i) => {
+        const poolGeo = new THREE.CircleGeometry(2.5, 32);
+        const poolMat = new THREE.MeshStandardMaterial({
+          color: COLORS.pool,
+          emissive: COLORS.pool,
+          emissiveIntensity: 0.2,
+          transparent: true,
+          opacity: 0.8,
+          roughness: 0.2,
+          metalness: 0.5
+        });
+        const pool = new THREE.Mesh(poolGeo, poolMat);
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(pos.x, -1.4, pos.z);
+        pool.userData = { index: i, baseEmissive: 0.2 };
+        scene.add(pool);
+        
+        // Pool rim
+        const rimGeo = new THREE.TorusGeometry(2.5, 0.3, 8, 32);
+        const rimMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.9 });
+        const rim = new THREE.Mesh(rimGeo, rimMat);
+        rim.rotation.x = Math.PI / 2;
+        rim.position.set(pos.x, -1.2, pos.z);
+        scene.add(rim);
+        
+        pools.push(pool);
+      });
+    }
+
+    function createWaterParticles() {
+      // Create water particles that flow toward the moon
+      const particleCount = 200;
+      const particleGeo = new THREE.BufferGeometry();
+      const positions = new Float32Array(particleCount * 3);
+      const velocities = [];
+      
+      for (let i = 0; i < particleCount; i++) {
+        // Spawn around edges
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 20 + Math.random() * 10;
+        positions[i * 3] = Math.cos(angle) * radius;
+        positions[i * 3 + 1] = -1 + Math.random() * 2;
+        positions[i * 3 + 2] = Math.sin(angle) * radius;
+        velocities.push(new THREE.Vector3());
+      }
+      
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      const particleMat = new THREE.PointsMaterial({
+        color: COLORS.water,
+        size: 0.3,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending
+      });
+      
+      const particles = new THREE.Points(particleGeo, particleMat);
+      particles.userData = { velocities };
+      scene.add(particles);
+      waterParticles.push(particles);
+    }
+
+    function createFlora() {
+      // Bioluminescent flora on sea floor
+      const floraCount = 40;
+      const floraGroup = new THREE.Group();
+      
+      for (let i = 0; i < floraCount; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 5 + Math.random() * 22;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        // Skip if in pool areas
+        let inPool = false;
+        pools.forEach(p => {
+          const dx = x - p.position.x;
+          const dz = z - p.position.z;
+          if (Math.sqrt(dx*dx + dz*dz) < 3) inPool = true;
+        });
+        if (inPool) continue;
+        
+        // Small glowing plant
+        const height = 0.5 + Math.random() * 1.5;
+        const floraGeo = new THREE.CylinderGeometry(0.05, 0.1, height, 8);
+        const floraMat = new THREE.MeshStandardMaterial({
+          color: COLORS.flora,
+          emissive: COLORS.flora,
+          emissiveIntensity: 0.3 + Math.random() * 0.4,
+          transparent: true,
+          opacity: 0.8
+        });
+        const flora = new THREE.Mesh(floraGeo, floraMat);
+        flora.position.set(x, -1.5 + height/2, z);
+        flora.userData = { 
+          baseY: flora.position.y,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.5 + Math.random() * 1.5
+        };
+        floraGroup.add(flora);
+      }
+      
+      scene.add(floraGroup);
+    }
+
+    function createStartScreenScene() {
+      // This is the same scene, just different camera angle
+      // The particles will rise from below like bioluminescence
+    }
+
+    // Start screen specific - additional particles for ambiance
+    let startParticles;
+    function addStartScreenParticles() {
+      if (startParticles) return;
+      
+      const count = 100;
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(count * 3);
+      
+      for (let i = 0; i < count; i++) {
+        pos[i*3] = (Math.random() - 0.5) * 60;
+        pos[i*3+1] = Math.random() * 30 - 10;
+        pos[i*3+2] = (Math.random() - 0.5) * 40;
+      }
+      
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      
+      const mat = new THREE.PointsMaterial({
+        color: 0x80ffcc,
+        size: 0.4,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending
+      });
+      
+      startParticles = new THREE.Points(geo, mat);
+      scene.add(startParticles);
+    }
+
+    function onPointerDown(e) {
+      if (!gameStarted || gameOver) return;
+      isDragging = true;
+      updateMoonTarget(e);
+    }
+
+    function onPointerMove(e) {
+      if (!isDragging || gameOver) return;
+      updateMoonTarget(e);
+    }
+
+    function onPointerUp() {
+      isDragging = false;
+    }
+
+    function updateMoonTarget(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      // Project to world position (approximate)
+      const vector = new THREE.Vector3(x, y, 0.5);
+      vector.unproject(camera);
+      const dir = vector.sub(camera.position).normalize();
+      const distance = -camera.position.y / dir.y;
+      const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+      
+      // Clamp moon position
+      moonTarget.x = Math.max(-20, Math.min(20, pos.x));
+      moonTarget.z = Math.max(-15, Math.min(15, pos.z));
+    }
+
+    function onStart(e) {
+      e.preventDefault();
+      startMusic();
+      gameStarted = true;
+      startScreen.classList.add('hidden');
+      ui.classList.add('visible');
+      instruction.classList.add('visible');
+      addStartScreenParticles();
+    }
+
+    function onRestart(e) {
+      e.preventDefault();
+      location.reload();
+    }
+
+    // Music
+    let musicStarted = false;
+    async function startMusic() {
+      if (musicStarted || typeof Tone === 'undefined') return;
+      musicStarted = true;
+      try {
+        await Tone.start();
+        
+        // Dreamy ambient with triangle oscillator
+        const synth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 1.2, decay: 0.6, sustain: 0.5, release: 3.0 },
+          volume: -20
+        }).toDestination();
+        
+        const reverb = new Tone.Reverb({ decay: 6, wet: 0.6 }).toDestination();
+        synth.connect(reverb);
+        
+        // Pentatonic notes - dreamy
+        const notes = ['C3', 'G3', 'A3', 'E4', 'D4'];
+        let i = 0;
+        const loop = new Tone.Loop((time) => {
+          synth.triggerAttackRelease(notes[i % notes.length], '2n', time);
+          i++;
+        }, '3n');
+        
+        Tone.Transport.bpm.value = 55;
+        loop.start(0);
+        Tone.Transport.start();
+      } catch(e) {
+        console.warn('Music unavailable:', e);
+      }
+    }
+
+    function updateWaterParticles(delta) {
+      const particles = waterParticles[0];
+      const positions = particles.geometry.attributes.position.array;
+      const velocities = particles.userData.velocities;
+      
+      // Calculate moon speed for tide mechanics
+      const moonSpeed = moon.position.distanceTo(moonTarget) * 0.5;
+      lastMoonSpeed = THREE.MathUtils.lerp(lastMoonSpeed, moonSpeed, 0.05);
+      
+      // Tide level responds to moon movement
+      tideLevel = THREE.MathUtils.lerp(tideLevel, 0.3 + lastMoonSpeed * 0.4, 0.02);
+      
+      for (let i = 0; i < velocities.length; i++) {
+        const idx = i * 3;
+        
+        // Water flows toward moon
+        const toMoon = new THREE.Vector3(
+          moon.position.x - positions[idx],
+          0,
+          moon.position.z - positions[idx + 2]
+        ).normalize();
+        
+        const dist = Math.sqrt(
+          Math.pow(moon.position.x - positions[idx], 2) +
+          Math.pow(moon.position.z - positions[idx + 2], 2)
+        );
+        
+        // Attraction strength based on distance and tide
+        const attraction = Math.max(0, 1 - dist / 30) * tideLevel * 2;
+        velocities[i].x = THREE.MathUtils.lerp(velocities[i].x, toMoon.x * attraction, 0.05);
+        velocities[i].z = THREE.MathUtils.lerp(velocities[i].z, toMoon.z * attraction, 0.05);
+        
+        positions[idx] += velocities[i].x * delta * 15;
+        positions[idx + 1] = -1 + Math.sin(clock.getElapsedTime() + i) * 0.3;
+        positions[idx + 2] += velocities[i].z * delta * 15;
+        
+        // Reset if too close to moon or too far
+        if (dist < 3 || dist > 35) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 22 + Math.random() * 8;
+          positions[idx] = moon.position.x + Math.cos(angle) * radius;
+          positions[idx + 2] = moon.position.z + Math.sin(angle) * radius;
+          velocities[i].set(0, 0, 0);
+        }
+        
+        // Check pool filling
+        pools.forEach((pool, pIdx) => {
+          const pdx = positions[idx] - pool.position.x;
+          const pdz = positions[idx + 2] - pool.position.z;
+          const pDist = Math.sqrt(pdx*pdz + pdz*pdz);
+          
+          if (pDist < 2.5 && positions[idx + 1] > -2 && positions[idx + 1] < 0) {
+            // Water in pool - fill based on moon control
+            if (lastMoonSpeed > 0.3 && lastMoonSpeed < 1.5) {
+              // Good speed - fills pools
+              poolLevels[pIdx] = Math.min(1, poolLevels[pIdx] + 0.003);
+            }
+          }
+        });
+      }
+      
+      particles.geometry.attributes.position.needsUpdate = true;
+      
+      // Update pool visuals
+      pools.forEach((pool, i) => {
+        const fillLevel = poolLevels[i];
+        pool.material.emissiveIntensity = 0.2 + fillLevel * 0.6;
+        pool.material.opacity = 0.5 + fillLevel * 0.4;
+        
+        if (fillLevel >= 1) {
+          pool.material.color.setHex(COLORS.poolFilled);
+          pool.material.emissive.setHex(COLORS.poolFilled);
+          document.getElementById('pool' + i).classList.add('filled');
+        }
+      });
+      
+      // Check win condition
+      if (poolLevels.every(l => l >= 1)) {
+        endGame(true);
+      }
+    }
+
+    function endGame(won) {
+      gameOver = true;
+      gameOverScreen.classList.add('visible');
+      if (won) {
+        gameOverScreen.classList.add('win');
+        gameOverText.textContent = 'AWAKENED';
+      } else {
+        gameOverScreen.classList.add('lose');
+        gameOverText.textContent = 'TIDE LOST';
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      const t = clock.getElapsedTime();
+      
+      // Moon movement
+      if (gameStarted && !gameOver) {
+        const moveSpeed = 0.08;
+        moon.position.x += (moonTarget.x - moon.position.x) * moveSpeed;
+        moon.position.z += (moonTarget.z - moon.position.z) * moveSpeed;
+        
+        // Gentle bob
+        moon.position.y = 15 + Math.sin(t * 0.5) * 0.5;
+        
+        // Update moon light position
+        const light = scene.children.find(c => c.isPointLight);
+        if (light) light.position.copy(moon.position);
+        
+        updateWaterParticles(delta);
+      }
+      
+      // Moon idle animation
+      moon.rotation.y += 0.002;
+      
+      // Start screen moon drift
+      if (!gameStarted) {
+        moon.position.x = Math.sin(t * 0.2) * 3;
+        moon.position.z = Math.cos(t * 0.15) * 2;
+        
+        // Start particles rise
+        if (startParticles) {
+          const positions = startParticles.geometry.attributes.position.array;
+          for (let i = 0; i < positions.length / 3; i++) {
+            positions[i * 3 + 1] += 0.02;
+            if (positions[i * 3 + 1] > 20) {
+              positions[i * 3 + 1] = -10;
+            }
+          }
+          startParticles.geometry.attributes.position.needsUpdate = true;
+        }
+      }
+      
+      // Flora breathing
+      scene.traverse(obj => {
+        if (obj.userData && obj.userData.baseY !== undefined) {
+          obj.position.y = obj.userData.baseY + Math.sin(t * obj.userData.speed + obj.userData.phase) * 0.2;
+          obj.material.emissiveIntensity = 0.3 + Math.sin(t * 1.5 + obj.userData.phase) * 0.2;
+        }
+      });
+      
+      // Pool idle glow
+      pools.forEach((pool, i) => {
+        if (poolLevels[i] < 1) {
+          pool.material.emissiveIntensity += Math.sin(t * 2 + i) * 0.01;
+        }
+      });
+      
+      renderer.render(scene, camera);
+    }
+
+    init();
+  </script>
+</body>
+</html>
