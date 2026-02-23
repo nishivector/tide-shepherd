@@ -116,6 +116,49 @@
       opacity: 1;
     }
     
+    #tideTimer {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,180,150,0.9);
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      z-index: 6;
+      opacity: 0;
+      transition: opacity 0.5s ease-out;
+      text-shadow: 0 0 10px rgba(255,150,100,0.5);
+    }
+    
+    #tideTimer.visible {
+      opacity: 1;
+    }
+    
+    #tideTimer.urgent {
+      color: rgba(255,100,100,1);
+      animation: timerPulse 0.5s ease-in-out infinite;
+    }
+    
+    @keyframes timerPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    
+    .pool-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid rgba(100,220,255,0.6);
+      box-shadow: 0 0 15px rgba(100,220,255,0.4), inset 0 0 15px rgba(100,220,255,0.2);
+      pointer-events: none;
+      animation: ringPulse 2s ease-in-out infinite;
+      z-index: 3;
+    }
+    
+    @keyframes ringPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+      50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+    }
+    
     .pool-indicator {
       display: flex;
       align-items: center;
@@ -225,7 +268,11 @@
     </div>
   </div>
   
-  <div id="instruction">drag the moon to guide the tide</div>
+  <div id="tideTimer">TIDE RETREATS IN: 75s</div>
+  
+  <div id="poolRings"></div>
+  
+  <div id="instruction">FILL ALL 3 POOLS — drag the moon to guide the tide</div>
   
   <div id="gameOver">
     <h2 id="gameOverText">AWAKENED</h2>
@@ -252,9 +299,14 @@
     let moonTarget = new THREE.Vector3(0, 15, 0);
     let tideLevel = 0;
     let lastMoonSpeed = 0;
+    let tideTimer = 75;
+    let tideInterval = null;
+    let poolRingsCreated = false;
+    let poolsFilled = [false, false, false]; // Track which pools just got filled for sound
     
     const startScreen = document.getElementById('startScreen');
     const ui = document.getElementById('ui');
+    const tideTimerEl = document.getElementById('tideTimer');
     const instruction = document.getElementById('instruction');
     const gameOverScreen = document.getElementById('gameOver');
     const gameOverText = document.getElementById('gameOverText');
@@ -588,15 +640,79 @@
       ui.classList.add('visible');
       instruction.classList.add('visible');
       addStartScreenParticles();
+      startTideTimer();
+      createPoolRings();
     }
 
     function onRestart(e) {
       e.preventDefault();
       location.reload();
     }
+    
+    // Tide timer
+    function startTideTimer() {
+      tideTimerEl.classList.add('visible');
+      tideInterval = setInterval(() => {
+        tideTimer--;
+        tideTimerEl.textContent = `TIDE RETREATS IN: ${tideTimer}s`;
+        
+        if (tideTimer <= 10) {
+          tideTimerEl.classList.add('urgent');
+        }
+        
+        if (tideTimer <= 0) {
+          clearInterval(tideInterval);
+          if (!poolLevels.every(l => l >= 1)) {
+            endGame(false);
+          }
+        }
+      }, 1000);
+    }
+    
+    // Pool rings for visual targeting
+    function createPoolRings() {
+      if (poolRingsCreated) return;
+      poolRingsCreated = true;
+      
+      const container = document.getElementById('poolRings');
+      pools.forEach((pool, i) => {
+        const ring = document.createElement('div');
+        ring.className = 'pool-ring';
+        ring.id = `poolRing${i}`;
+        ring.style.width = '120px';
+        ring.style.height = '120px';
+        container.appendChild(ring);
+      });
+    }
+    
+    function updatePoolRings() {
+      if (!poolRingsCreated) return;
+      
+      pools.forEach((pool, i) => {
+        const ring = document.getElementById(`poolRing${i}`);
+        if (!ring) return;
+        
+        // Project 3D position to screen coordinates
+        const pos = pool.position.clone();
+        pos.y += 1.5; // Above the pool
+        pos.project(camera);
+        
+        const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-pos.y * 0.5 + 0.5) * window.innerHeight;
+        
+        ring.style.left = x + 'px';
+        ring.style.top = y + 'px';
+        
+        // Hide if behind camera
+        ring.style.display = pos.z > 1 ? 'none' : 'block';
+      });
+    }
 
     // Music
     let musicStarted = false;
+    let trickleSynth = null;
+    let chimeSynth = null;
+    
     async function startMusic() {
       if (musicStarted || typeof Tone === 'undefined') return;
       musicStarted = true;
@@ -624,9 +740,84 @@
         Tone.Transport.bpm.value = 55;
         loop.start(0);
         Tone.Transport.start();
+        
+        // Initialize effect synthesizers
+        initSoundEffects();
       } catch(e) {
         console.warn('Music unavailable:', e);
       }
+    }
+    
+    function initSoundEffects() {
+      if (typeof Tone === 'undefined') return;
+      try {
+        // Water trickle synth (NoiseSynth)
+        trickleSynth = new Tone.NoiseSynth({
+          noise: { type: 'pink' },
+          envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 },
+          volume: -30
+        }).toDestination();
+        
+        // Chime synth (MembraneSynth for bell-like sounds)
+        chimeSynth = new Tone.MembraneSynth({
+          pitchDecay: 0.05,
+          octaves: 4,
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.5 },
+          volume: -15
+        }).toDestination();
+      } catch(e) {
+        console.warn('Sound effects unavailable:', e);
+      }
+    }
+    
+    function playTrickleSound() {
+      if (!trickleSynth || typeof Tone === 'undefined') return;
+      try {
+        trickleSynth.triggerAttackRelease('16n');
+      } catch(e) {}
+    }
+    
+    function playPoolChime() {
+      if (!chimeSynth || typeof Tone === 'undefined') return;
+      try {
+        // E4 -> G4 -> C5 ascending
+        const now = Tone.now();
+        chimeSynth.triggerAttackRelease('E4', '8n', now);
+        chimeSynth.triggerAttackRelease('G4', '8n', now + 0.1);
+        chimeSynth.triggerAttackRelease('C5', '8n', now + 0.2);
+      } catch(e) {}
+    }
+    
+    function playLoseSound() {
+      if (typeof Tone === 'undefined') return;
+      try {
+        const synth = new Tone.MembraneSynth({
+          pitchDecay: 0.08,
+          octaves: 2,
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.1, decay: 1.5, sustain: 0, release: 1 },
+          volume: -10
+        }).toDestination();
+        synth.triggerAttackRelease('C1', '2n');
+      } catch(e) {}
+    }
+    
+    function playWinSound() {
+      if (typeof Tone === 'undefined') return;
+      try {
+        const synth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.5 },
+          volume: -12
+        }).toDestination();
+        // Bright arpeggio C4-E4-G4-C5
+        const now = Tone.now();
+        synth.triggerAttackRelease('C4', '16n', now);
+        synth.triggerAttackRelease('E4', '16n', now + 0.08);
+        synth.triggerAttackRelease('G4', '16n', now + 0.16);
+        synth.triggerAttackRelease('C5', '8n', now + 0.24);
+      } catch(e) {}
     }
 
     function updateWaterParticles(delta) {
@@ -640,6 +831,11 @@
       
       // Tide level responds to moon movement
       tideLevel = THREE.MathUtils.lerp(tideLevel, 0.3 + lastMoonSpeed * 0.4, 0.02);
+      
+      // Play trickle sound when dragging and particles flowing
+      if (isDragging && lastMoonSpeed > 0.2 && Math.random() < 0.03) {
+        playTrickleSound();
+      }
       
       for (let i = 0; i < velocities.length; i++) {
         const idx = i * 3;
@@ -678,13 +874,19 @@
         pools.forEach((pool, pIdx) => {
           const pdx = positions[idx] - pool.position.x;
           const pdz = positions[idx + 2] - pool.position.z;
-          const pDist = Math.sqrt(pdx*pdz + pdz*pdz);
+          const pDist = Math.sqrt(pdx*pdx + pdz*pdz);
           
           if (pDist < 2.5 && positions[idx + 1] > -2 && positions[idx + 1] < 0) {
             // Water in pool - fill based on moon control
             if (lastMoonSpeed > 0.3 && lastMoonSpeed < 1.5) {
-              // Good speed - fills pools
+              // Check if pool is about to fill
+              const wasBelow = poolLevels[pIdx] < 1;
               poolLevels[pIdx] = Math.min(1, poolLevels[pIdx] + 0.003);
+              // Check if just crossed the threshold
+              if (wasBelow && poolLevels[pIdx] >= 1 && !poolsFilled[pIdx]) {
+                poolsFilled[pIdx] = true;
+                playPoolChime();
+              }
             }
           }
         });
@@ -713,13 +915,16 @@
 
     function endGame(won) {
       gameOver = true;
+      if (tideInterval) clearInterval(tideInterval);
       gameOverScreen.classList.add('visible');
       if (won) {
         gameOverScreen.classList.add('win');
         gameOverText.textContent = 'AWAKENED';
+        playWinSound();
       } else {
         gameOverScreen.classList.add('lose');
-        gameOverText.textContent = 'TIDE LOST';
+        gameOverText.textContent = 'THE TIDE HAS RETREATED';
+        playLoseSound();
       }
     }
 
@@ -779,6 +984,11 @@
           pool.material.emissiveIntensity += Math.sin(t * 2 + i) * 0.01;
         }
       });
+      
+      // Update pool rings screen positions
+      if (gameStarted && !gameOver) {
+        updatePoolRings();
+      }
       
       renderer.render(scene, camera);
     }
